@@ -24,6 +24,12 @@ export interface Commute {
   created_at: string
 }
 
+export interface Wave {
+  id: string
+  finish_date: string
+  is_active: boolean
+}
+
 export interface LeaderboardRow {
   user_id: string
   display_name: string

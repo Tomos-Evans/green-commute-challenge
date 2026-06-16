@@ -151,11 +151,76 @@ $$;
 
 ---
 
-## 6. RPC: `get_leaderboard`
+## 6. Create `waves` table
+
+Waves are fixed-length competition periods. They are created and toggled
+**only from the Supabase dashboard** — the web app never writes to this
+table, it only reads the currently active wave.
+
+```sql
+create table public.waves (
+  id          uuid primary key default gen_random_uuid(),
+  finish_date date not null,
+  is_active   boolean not null default false
+);
+
+-- Enforce at most one active wave at a time
+create unique index waves_single_active_idx
+  on public.waves (is_active)
+  where (is_active = true);
+
+alter table public.waves enable row level security;
+
+-- Read-only from the app; waves are created/edited via the Supabase dashboard
+create policy "Authenticated users can read waves"
+  on public.waves for select
+  to authenticated
+  using (true);
+```
+
+`finish_date` is the last inclusive day of the wave, entered as a calendar
+date in US Eastern time (e.g. `2026-06-30`). To start a new wave: insert a
+row with the desired `finish_date`, then set `is_active = true` (and set
+any previously active wave's `is_active` back to `false` first — the
+unique index above prevents two active waves at once).
+
+### Add `wave_id` to `commutes` + auto-assignment trigger
+
+```sql
+alter table public.commutes
+  add column wave_id uuid references public.waves(id);
+
+create or replace function public.set_commute_wave_id()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.wave_id is null then
+    select id into new.wave_id from public.waves where is_active = true limit 1;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger commutes_set_wave_id
+  before insert on public.commutes
+  for each row execute function public.set_commute_wave_id();
+```
+
+This stamps every new commute with whichever wave is active at insert
+time (or leaves `wave_id` `null` if no wave is active). The app never sets
+`wave_id` itself.
+
+---
+
+## 7. RPC: `get_leaderboard`
 
 Returns per-user aggregates needed to compute points on the client.
 The weather warrior multiplier is applied in the app (`src/lib/constants.ts`)
 so changing it never requires a database migration.
+
+When a wave is active, totals are scoped to commutes logged during that
+wave; when no wave is active, totals are all-time (unchanged behavior).
 
 ```sql
 create or replace function public.get_leaderboard()
@@ -172,6 +237,9 @@ returns table (
 language sql
 security definer
 as $$
+  with active_wave as (
+    select id from public.waves where is_active = true limit 1
+  )
   select
     p.id                                                                  as user_id,
     p.display_name,
@@ -184,9 +252,15 @@ as $$
     count(c.id)                                                           as journey_count,
     count(c.id) filter (where c.weather_warrior = true)                  as warrior_commute_count
   from public.profiles p
-  left join public.commutes c on c.user_id = p.id
+  left join public.commutes c
+    on c.user_id = p.id
+   and (
+     (select id from active_wave) is null
+     or c.wave_id = (select id from active_wave)
+   )
   left join public.transport_modes tm on tm.id = c.transport_mode_id
-  group by p.id, p.display_name, p.discriminator;
+  group by p.id, p.display_name, p.discriminator
+  having (select id from active_wave) is null or count(c.id) > 0;
 $$;
 
 -- Allow authenticated users to call this function
@@ -196,7 +270,7 @@ grant execute on function public.get_next_discriminator(text) to authenticated;
 
 ---
 
-## 7. Environment variables
+## 8. Environment variables
 
 Copy `.env.example` to `.env` and fill in your values:
 
@@ -209,7 +283,7 @@ Find these in your Supabase project under **Settings → API**.
 
 ---
 
-## 8. Auth settings (Supabase Dashboard)
+## 9. Auth settings (Supabase Dashboard)
 
 - **Authentication → Providers → Email**: ensure Email provider is enabled.
 - Optionally disable "Confirm email" for local development so you can sign up immediately without checking email.
