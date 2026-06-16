@@ -1,7 +1,5 @@
 # Green Commute Challenge
 
-test
-
 This will be a proof of concept build of a green commute tracking website for use at my work. Its goal is to encourage eco friendly choices for transport. 
 
 The frontend is a react SPA that will be hosted on github pages, and the Auth/Database is provided by supabase. I would like the project to use tailwind. 
