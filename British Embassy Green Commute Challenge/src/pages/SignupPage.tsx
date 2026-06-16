@@ -139,13 +139,12 @@ export function SignupPage() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 required
-                placeholder="e.g. tom"
+                placeholder=""
                 maxLength={32}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a2b5e]/30 focus:border-[#1a2b5e] transition-colors"
               />
               <p className="text-xs text-gray-400 mt-1">
-                You'll appear as <strong>{displayName || 'name'}#N</strong> — a number is added
-                automatically so you don't need to use your real name.
+                This is publicly visible to other users.
               </p>
             </div>
 
@@ -195,10 +194,10 @@ export function SignupPage() {
                 required
                 autoComplete="new-password"
                 placeholder="••••••••"
-                minLength={6}
+                minLength={8}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a2b5e]/30 focus:border-[#1a2b5e] transition-colors"
               />
-              <p className="text-xs text-gray-400 mt-1">Minimum 6 characters.</p>
+              <p className="text-xs text-gray-400 mt-1">Minimum 8 characters, including at least one uppercase letter, one lowercase letter, one number, and one special character.</p>
             </div>
 
             {error && (
