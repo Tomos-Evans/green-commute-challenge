@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useGroup } from '../context/GroupContext'
 import { supabase } from '../lib/supabase'
 import { daysRemaining } from '../lib/waves'
 import type { Wave } from '../types/database'
@@ -16,18 +17,23 @@ function initials(name: string): string {
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { profile } = useAuth()
+  const { selectedGroupId } = useGroup()
   const location = useLocation()
   const [activeWave, setActiveWave] = useState<Wave | null>(null)
 
   useEffect(() => {
-    if (!profile) return
+    if (!profile || !selectedGroupId) {
+      setActiveWave(null)
+      return
+    }
     supabase
       .from('waves')
-      .select('id, finish_date, is_active')
+      .select('id, group_id, start_date, finish_date, is_active')
+      .eq('group_id', selectedGroupId)
       .eq('is_active', true)
       .maybeSingle()
       .then(({ data }) => setActiveWave((data as Wave | null) ?? null))
-  }, [profile])
+  }, [profile, selectedGroupId])
 
   return (
     <div className="min-h-screen bg-[#f5f0e8] flex flex-col">

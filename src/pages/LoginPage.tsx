@@ -1,15 +1,17 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 
 export function LoginPage() {
+  const [searchParams] = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const { refreshProfile } = useAuth()
   const navigate = useNavigate()
+  const pin = searchParams.get('pin')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -21,7 +23,7 @@ export function LoginPage() {
       setLoading(false)
     } else {
       await refreshProfile(data.user?.id)
-      navigate('/leaderboard')
+      navigate(pin ? `/join?pin=${encodeURIComponent(pin)}` : '/leaderboard')
     }
   }
 

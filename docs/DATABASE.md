@@ -270,7 +270,201 @@ grant execute on function public.get_next_discriminator(text) to authenticated;
 
 ---
 
-## 8. Environment variables
+## 8. Groups
+
+Groups let multiple organisations use the same app, each with their own
+leaderboard. A user can belong to more than one group. Groups are created
+**only from the Supabase dashboard** — the app never creates them, it only
+lets users join one via a PIN.
+
+```sql
+create table public.groups (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  join_pin   text not null unique,
+  created_at timestamptz not null default now()
+);
+
+alter table public.groups enable row level security;
+-- Intentionally no select policy: the table (and its PINs) is only ever
+-- read via the security-definer function / view below, never directly by the app.
+
+create table public.user_groups (
+  user_id   uuid not null references public.profiles(id) on delete cascade,
+  group_id  uuid not null references public.groups(id) on delete cascade,
+  joined_at timestamptz not null default now(),
+  primary key (user_id, group_id)
+);
+
+alter table public.user_groups enable row level security;
+
+create policy "Users can read own memberships"
+  on public.user_groups for select
+  to authenticated
+  using (auth.uid() = user_id);
+```
+
+A view exposes only `id`/`name`/`joined_at` for the calling user's own
+memberships (never the PIN). Views run with the privileges of their owner
+by default, so this can join `groups` despite it having no select policy —
+the same trust boundary as the security-definer functions below.
+
+```sql
+create view public.my_groups as
+select ug.group_id as id, g.name, ug.joined_at
+from public.user_groups ug
+join public.groups g on g.id = ug.group_id
+where ug.user_id = auth.uid();
+
+grant select on public.my_groups to authenticated;
+```
+
+### RPC: `join_group_by_pin`
+
+```sql
+create or replace function public.join_group_by_pin(p_pin text)
+returns table (id uuid, name text)
+language plpgsql
+security definer
+as $$
+declare
+  v_group_id uuid;
+  v_group_name text;
+begin
+  select g.id, g.name into v_group_id, v_group_name
+  from public.groups g
+  where g.join_pin = p_pin;
+
+  if v_group_id is null then
+    raise exception 'Invalid group PIN';
+  end if;
+
+  insert into public.user_groups (user_id, group_id)
+  values (auth.uid(), v_group_id)
+  on conflict do nothing;
+
+  return query select v_group_id, v_group_name;
+end;
+$$;
+
+grant execute on function public.join_group_by_pin(text) to authenticated;
+```
+
+---
+
+## 9. Waves become per-group
+
+The wave model above assumed a single global active wave, stamped onto
+each commute at insert time via `set_commute_wave_id()`. That stamping
+approach doesn't work once a user can belong to multiple groups that each
+run their own wave on their own schedule — a single commute can't carry
+one `wave_id` that simultaneously means "in Group A's current wave" and
+"in Group B's current wave" if those waves differ.
+
+Run this migration to switch `waves` to a **date-range** model instead of
+a stamped FK: each wave row gets its own `start_date` (in addition to the
+existing `finish_date`) and belongs to one group. Leaderboard queries then
+check whether `commute_date` falls inside the *selected group's* active
+wave's date range, computed at query time — so the same commute correctly
+counts toward however many different group/wave windows it actually falls
+within.
+
+```sql
+-- Drop the old global-wave stamping mechanism
+drop trigger if exists commutes_set_wave_id on public.commutes;
+drop function if exists public.set_commute_wave_id();
+drop index if exists waves_single_active_idx;
+alter table public.commutes drop column if exists wave_id;
+
+-- Make waves group-scoped and date-ranged
+alter table public.waves
+  add column group_id  uuid references public.groups(id) on delete cascade,
+  add column start_date date;
+
+-- Backfill any existing wave rows with a group_id and start_date before
+-- running the next two lines (or just delete and recreate them per group —
+-- this is a POC with no production data yet).
+alter table public.waves alter column group_id set not null;
+alter table public.waves alter column start_date set not null;
+
+-- Enforce at most one active wave per group (instead of one globally)
+create unique index waves_single_active_per_group_idx
+  on public.waves (group_id)
+  where (is_active = true);
+```
+
+`waves` RLS (`"Authenticated users can read waves"`) is unchanged — still
+dashboard-managed, still read-only from the app.
+
+### Update `get_leaderboard` to filter by group and that group's wave window
+
+```sql
+create or replace function public.get_leaderboard(p_group_id uuid default null)
+returns table (
+  user_id                    uuid,
+  display_name               text,
+  discriminator              integer,
+  total_non_warrior_points   float,
+  total_warrior_base_points  float,
+  total_miles                float,
+  journey_count              bigint,
+  warrior_commute_count      bigint
+)
+language sql
+security definer
+as $$
+  with active_wave as (
+    select start_date, finish_date
+    from public.waves
+    where group_id = p_group_id and is_active = true
+    limit 1
+  )
+  select
+    p.id                                                                  as user_id,
+    p.display_name,
+    p.discriminator,
+    coalesce(sum(c.distance_miles * tm.points_per_mile)
+      filter (where c.weather_warrior = false), 0)                       as total_non_warrior_points,
+    coalesce(sum(c.distance_miles * tm.points_per_mile)
+      filter (where c.weather_warrior = true), 0)                        as total_warrior_base_points,
+    coalesce(sum(c.distance_miles), 0)                                   as total_miles,
+    count(c.id)                                                           as journey_count,
+    count(c.id) filter (where c.weather_warrior = true)                  as warrior_commute_count
+  from public.profiles p
+  left join public.commutes c
+    on c.user_id = p.id
+   and (
+     p_group_id is null                          -- global view: all-time, no wave scoping
+     or not exists (select 1 from active_wave)    -- group has no active wave: all-time for that group
+     or c.commute_date between (select start_date from active_wave) and (select finish_date from active_wave)
+   )
+  left join public.transport_modes tm on tm.id = c.transport_mode_id
+  where
+    p_group_id is null
+    or exists (
+      select 1 from public.user_groups ug
+      where ug.user_id = p.id and ug.group_id = p_group_id
+    )
+  group by p.id, p.display_name, p.discriminator
+  having case when p_group_id is not null and exists (select 1 from active_wave)
+              then count(c.id) > 0
+              else true end;
+$$;
+
+grant execute on function public.get_leaderboard(uuid) to authenticated;
+```
+
+`p_group_id` is not restricted to groups the caller belongs to —
+leaderboard rows only ever contain display name + aggregated points (the
+same data already visible globally), so there's no new information
+disclosure. The group id itself is only discoverable by members (via
+`my_groups`), so this is fine as-is. The "Global" view (`p_group_id is
+null`) is always all-time, since there's no longer a single wave that
+applies across every group.
+
+---
+
+## 10. Environment variables
 
 Copy `.env.example` to `.env` and fill in your values:
 
@@ -283,7 +477,7 @@ Find these in your Supabase project under **Settings → API**.
 
 ---
 
-## 9. Auth settings (Supabase Dashboard)
+## 11. Auth settings (Supabase Dashboard)
 
 - **Authentication → Providers → Email**: ensure Email provider is enabled.
 - Optionally disable "Confirm email" for local development so you can sign up immediately without checking email.

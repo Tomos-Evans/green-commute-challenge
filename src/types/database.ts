@@ -26,8 +26,16 @@ export interface Commute {
 
 export interface Wave {
   id: string
+  group_id: string
+  start_date: string
   finish_date: string
   is_active: boolean
+}
+
+export interface Group {
+  id: string
+  name: string
+  joined_at: string
 }
 
 export interface LeaderboardRow {

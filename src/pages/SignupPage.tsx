@@ -1,19 +1,25 @@
 import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useGroup } from '../context/GroupContext'
+import { joinGroupByPin } from '../lib/groups'
 import type { TransportMode } from '../types/database'
 
 export function SignupPage() {
+  const [searchParams] = useSearchParams()
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [normalModeId, setNormalModeId] = useState<string>('')
+  const [groupPin, setGroupPin] = useState(searchParams.get('pin') ?? '')
+  const [groupJoinWarning, setGroupJoinWarning] = useState<string | null>(null)
   const [modes, setModes] = useState<TransportMode[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [checkEmail, setCheckEmail] = useState(false)
   const { refreshProfile } = useAuth()
+  const { refreshGroups } = useGroup()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -79,12 +85,52 @@ export function SignupPage() {
       ])
       if (profileError) throw profileError
 
+      const trimmedPin = groupPin.trim()
+      let joinWarning: string | null = null
+      if (trimmedPin) {
+        try {
+          await joinGroupByPin(trimmedPin)
+          await refreshGroups()
+        } catch {
+          joinWarning = "Couldn't join with that PIN — you can try again from your profile."
+        }
+      }
+
       await refreshProfile(authData.user!.id)
-      navigate('/leaderboard')
+
+      if (joinWarning) {
+        setGroupJoinWarning(joinWarning)
+        setLoading(false)
+      } else {
+        navigate('/leaderboard')
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
       setLoading(false)
     }
+  }
+
+  if (groupJoinWarning) {
+    return (
+      <div className="min-h-screen bg-[#f5f0e8] flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white rounded-xl shadow-md overflow-hidden text-center">
+          <div className="h-1 bg-[#c8102e]" />
+          <div className="p-8">
+            <div className="text-4xl mb-4">⚠️</div>
+            <h2 className="text-xl font-semibold text-[#1a2b5e] mb-2">Account created</h2>
+            <p className="text-amber-700 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+              {groupJoinWarning}
+            </p>
+            <button
+              onClick={() => navigate('/leaderboard')}
+              className="w-full bg-[#1a2b5e] hover:bg-[#142248] text-white font-semibold py-2.5 rounded-lg transition-colors"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (checkEmail) {
@@ -161,6 +207,23 @@ export function SignupPage() {
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* Group PIN */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                Group PIN (optional)
+              </label>
+              <input
+                type="text"
+                value={groupPin}
+                onChange={(e) => setGroupPin(e.target.value)}
+                placeholder="e.g. ABC123"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a2b5e]/30 focus:border-[#1a2b5e] transition-colors"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Got a PIN from your team? Enter it to join their leaderboard.
+              </p>
             </div>
 
             {/* Email */}

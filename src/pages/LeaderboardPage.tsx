@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useGroup } from '../context/GroupContext'
 import { WEATHER_WARRIOR_MULTIPLIER } from '../lib/constants'
 import type { LeaderboardRow, RankedEntry } from '../types/database'
 
@@ -96,12 +97,14 @@ function LeaderboardRow({
 
 export function LeaderboardPage() {
   const { user } = useAuth()
+  const { groups, selectedGroupId, setSelectedGroupId } = useGroup()
   const [ranked, setRanked] = useState<RankedEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchLeaderboard = useCallback(async () => {
-    const { data, error } = await supabase.rpc('get_leaderboard')
+  const fetchLeaderboard = useCallback(async (groupId: string | null) => {
+    setLoading(true)
+    const { data, error } = await supabase.rpc('get_leaderboard', { p_group_id: groupId })
     if (error) {
       setError(error.message)
     } else {
@@ -111,8 +114,8 @@ export function LeaderboardPage() {
   }, [])
 
   useEffect(() => {
-    fetchLeaderboard()
-  }, [fetchLeaderboard])
+    fetchLeaderboard(selectedGroupId)
+  }, [fetchLeaderboard, selectedGroupId])
 
   const top10 = ranked.slice(0, 10)
   const currentUserEntry = ranked.find((r) => r.user_id === user?.id)
@@ -139,6 +142,23 @@ export function LeaderboardPage() {
 
       {/* Main content */}
       <div className="max-w-3xl mx-auto px-4 py-8 pb-28">
+        {groups.length > 0 && (
+          <div className="mb-4">
+            <select
+              value={selectedGroupId ?? ''}
+              onChange={(e) => setSelectedGroupId(e.target.value || null)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1a2b5e]/30 focus:border-[#1a2b5e] transition-colors"
+            >
+              <option value="">Global</option>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="flex items-baseline justify-between mb-6">
           <h1 className="text-3xl font-bold text-[#1a2b5e]">
             🏆{' '}

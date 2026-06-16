@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useGroup } from '../context/GroupContext'
 import { calculatePoints } from '../lib/points'
 import { WEATHER_WARRIOR_MULTIPLIER } from '../lib/constants'
+import { joinGroupByPin } from '../lib/groups'
 import { BadgeCard } from '../components/BadgeCard'
 import type { LeaderboardRow } from '../types/database'
 
@@ -99,11 +101,15 @@ function StatCard({
 
 export function ProfilePage() {
   const { user, profile } = useAuth()
+  const { groups, refreshGroups } = useGroup()
   const navigate = useNavigate()
 
   const [commutes, setCommutes] = useState<CommuteWithMode[]>([])
   const [rank, setRank] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [joinPin, setJoinPin] = useState('')
+  const [joinError, setJoinError] = useState<string | null>(null)
+  const [joining, setJoining] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -170,6 +176,23 @@ export function ProfilePage() {
   async function handleSignOut() {
     await supabase.auth.signOut()
     navigate('/login')
+  }
+
+  async function handleJoinGroup(e: React.FormEvent) {
+    e.preventDefault()
+    const pin = joinPin.trim()
+    if (!pin) return
+    setJoinError(null)
+    setJoining(true)
+    try {
+      await joinGroupByPin(pin)
+      await refreshGroups()
+      setJoinPin('')
+    } catch (err: unknown) {
+      setJoinError(err instanceof Error ? err.message : 'Invalid PIN.')
+    } finally {
+      setJoining(false)
+    }
   }
 
   return (
@@ -283,6 +306,51 @@ export function ProfilePage() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Groups */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-base font-bold text-[#1a2b5e] mb-4 relative inline-block">
+          Groups
+          <span className="absolute -bottom-1 left-0 w-full h-0.5 bg-[#c8102e]" />
+        </h2>
+
+        {groups.length === 0 ? (
+          <p className="text-sm text-gray-400 mt-5">You haven't joined any groups yet.</p>
+        ) : (
+          <ul className="space-y-2 mt-5">
+            {groups.map((g) => (
+              <li
+                key={g.id}
+                className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg text-sm text-gray-700"
+              >
+                {g.name}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form onSubmit={handleJoinGroup} className="flex gap-2 mt-4">
+          <input
+            type="text"
+            value={joinPin}
+            onChange={(e) => setJoinPin(e.target.value)}
+            placeholder="Enter a group PIN"
+            className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a2b5e]/30 focus:border-[#1a2b5e] transition-colors"
+          />
+          <button
+            type="submit"
+            disabled={joining}
+            className="px-4 py-2 text-sm font-semibold text-white bg-[#1a2b5e] hover:bg-[#142248] disabled:opacity-60 rounded-lg transition-colors whitespace-nowrap"
+          >
+            {joining ? 'Joining…' : 'Join group'}
+          </button>
+        </form>
+        {joinError && (
+          <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">
+            {joinError}
+          </p>
+        )}
       </div>
     </div>
   )
