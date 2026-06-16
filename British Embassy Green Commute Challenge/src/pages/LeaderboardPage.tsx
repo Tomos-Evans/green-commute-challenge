@@ -137,7 +137,7 @@ export function LeaderboardPage() {
       </div>
 
       {/* Main content */}
-      <div className="max-w-3xl mx-auto px-4 py-8">
+      <div className="max-w-3xl mx-auto px-4 py-8 pb-28">
         <div className="flex items-baseline justify-between mb-6">
           <h1 className="text-3xl font-bold text-[#1a2b5e]">
             🏆{' '}
