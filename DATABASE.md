@@ -16,10 +16,11 @@ create extension if not exists "pgcrypto";
 
 ```sql
 create table public.transport_modes (
-  id             uuid primary key default gen_random_uuid(),
-  name           text not null,
-  emoji          text,
-  points_per_mile float not null
+  id                        uuid primary key default gen_random_uuid(),
+  name                      text not null,
+  emoji                     text,
+  points_per_mile           float not null,
+  weather_warrior_eligible  boolean not null default false
 );
 
 -- Transport modes are public reference data — allow anon and authenticated to read.
@@ -32,15 +33,27 @@ create policy "Anyone can read transport modes"
   using (true);
 ```
 
+`weather_warrior_eligible` controls whether the Weather Warrior toggle appears on the Log Journey page for that mode — only modes where the commuter is actually exposed to the weather (walking, cycling, e-bike) should be `true`. Modes where you're sheltered (public transport, car/EV) should be `false`.
+
 ### Seed transport modes
 
 ```sql
-insert into public.transport_modes (name, emoji, points_per_mile) values
-  ('Walking',          '🚶', 3),
-  ('Cycling',          '🚴', 2),
-  ('E-Bike/E-Scooter', '🛵', 1.5),
-  ('Public Transport', '🚌', 1),
-  ('EV / Car-Share',   '⚡', 0.5);
+insert into public.transport_modes (name, emoji, points_per_mile, weather_warrior_eligible) values
+  ('Walking',          '🚶', 3,   true),
+  ('Cycling',          '🚴', 2,   true),
+  ('E-Bike/E-Scooter', '🛵', 1.5, true),
+  ('Public Transport', '🚌', 1,   false),
+  ('EV / Car-Share',   '⚡', 0.5, false);
+```
+
+### Migration — if you already created the table
+
+```sql
+alter table public.transport_modes
+  add column weather_warrior_eligible boolean not null default false;
+
+update public.transport_modes set weather_warrior_eligible = true
+  where name in ('Walking', 'Cycling', 'E-Bike/E-Scooter');
 ```
 
 ---

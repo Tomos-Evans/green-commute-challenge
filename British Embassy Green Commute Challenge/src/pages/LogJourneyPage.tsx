@@ -35,6 +35,7 @@ export function LogJourneyPage() {
   }, [])
 
   const selectedMode = modes.find((m) => m.id === selectedModeId) ?? null
+  const showWeatherWarrior = selectedMode?.weather_warrior_eligible ?? false
   const milesNum = parseFloat(miles)
   const previewPoints =
     selectedMode && milesNum > 0
@@ -73,6 +74,11 @@ export function LogJourneyPage() {
 
     setSuccess(true)
     setSubmitting(false)
+  }
+
+  function handleSelectMode(mode: TransportMode) {
+    setSelectedModeId(mode.id)
+    if (!mode.weather_warrior_eligible) setWeatherWarrior(false)
   }
 
   function handleLogAnother() {
@@ -181,39 +187,41 @@ export function LogJourneyPage() {
                     key={mode.id}
                     mode={mode}
                     selected={selectedModeId === mode.id}
-                    onClick={() => setSelectedModeId(mode.id)}
+                    onClick={() => handleSelectMode(mode)}
                   />
                 ))}
               </div>
             )}
           </div>
 
-          {/* Weather Warrior */}
-          <div>
-            <label className="block text-xs font-bold tracking-widest text-gray-500 uppercase mb-3">
-              Weather conditions
-            </label>
-            <label className="flex items-center justify-between bg-gray-50 rounded-xl px-5 py-4 cursor-pointer hover:bg-gray-100 transition-colors">
-              <div className="flex items-center gap-3">
-                <span className="text-xl">☔</span>
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">Weather Warrior</p>
-                  <p className="text-xs text-gray-500">Commuted in adverse weather conditions</p>
+          {/* Weather Warrior — only for modes exposed to the weather */}
+          {showWeatherWarrior && (
+            <div>
+              <label className="block text-xs font-bold tracking-widest text-gray-500 uppercase mb-3">
+                Weather conditions
+              </label>
+              <label className="flex items-center justify-between bg-gray-50 rounded-xl px-5 py-4 cursor-pointer hover:bg-gray-100 transition-colors">
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">☔</span>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">Weather Warrior</p>
+                    <p className="text-xs text-gray-500">Commuted in adverse weather conditions</p>
+                  </div>
                 </div>
-              </div>
-              {/* Toggle */}
-              <div className="relative">
-                <input
-                  type="checkbox"
-                  className="sr-only peer"
-                  checked={weatherWarrior}
-                  onChange={(e) => setWeatherWarrior(e.target.checked)}
-                />
-                <div className="w-11 h-6 bg-gray-300 peer-checked:bg-[#1a2b5e] rounded-full transition-colors" />
-                <div className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5" />
-              </div>
-            </label>
-          </div>
+                {/* Toggle */}
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={weatherWarrior}
+                    onChange={(e) => setWeatherWarrior(e.target.checked)}
+                  />
+                  <div className="w-11 h-6 bg-gray-300 peer-checked:bg-[#1a2b5e] rounded-full transition-colors" />
+                  <div className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5" />
+                </div>
+              </label>
+            </div>
+          )}
 
           {/* Points preview */}
           {previewPoints !== null && (

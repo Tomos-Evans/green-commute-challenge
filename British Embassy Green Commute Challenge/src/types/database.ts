@@ -3,6 +3,7 @@ export interface TransportMode {
   name: string
   emoji: string | null
   points_per_mile: number
+  weather_warrior_eligible: boolean
 }
 
 export interface Profile {
