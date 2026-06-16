@@ -8,6 +8,8 @@ interface AuthContextValue {
   user: User | null
   profile: Profile | null
   loading: boolean
+  passwordRecovery: boolean
+  clearPasswordRecovery: () => void
   refreshProfile: (userId?: string) => Promise<void>
 }
 
@@ -15,6 +17,8 @@ const AuthContext = createContext<AuthContextValue>({
   user: null,
   profile: null,
   loading: true,
+  passwordRecovery: false,
+  clearPasswordRecovery: () => {},
   refreshProfile: async () => {},
 })
 
@@ -22,6 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
 
   async function fetchProfile(userId: string) {
     const { data } = await supabase
@@ -47,8 +52,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUser(session?.user ?? null)
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordRecovery(true)
+      }
       if (session?.user) {
         fetchProfile(session.user.id)
       } else {
@@ -60,7 +68,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, refreshProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        profile,
+        loading,
+        passwordRecovery,
+        clearPasswordRecovery: () => setPasswordRecovery(false),
+        refreshProfile,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )
