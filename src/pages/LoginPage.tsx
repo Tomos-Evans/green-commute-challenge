@@ -21,7 +21,7 @@ export function LoginPage() {
       setError(error.message)
       setLoading(false)
     } else {
-      await refreshProfile(data.user?.id)
+      await refreshProfile(data.user ?? undefined)
       navigate('/leaderboard')
     }
   }

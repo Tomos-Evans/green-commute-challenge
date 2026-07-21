@@ -48,39 +48,31 @@ export function SignupPage() {
     setLoading(true)
 
     try {
-      // 1. Create auth user
+      // Create auth user. display_name / normal_commute_mode_id ride along in
+      // user_metadata so AuthContext can provision the profile once a session
+      // exists — immediately here, or later after the user confirms their email.
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          emailRedirectTo: `${window.location.origin}${window.location.pathname}`,
+          data: {
+            display_name: trimmedName,
+            normal_commute_mode_id: normalModeId || null,
+          },
+        },
       })
       if (authError) throw authError
 
       if (!authData.session) {
-        // Email confirmation required — can't create profile yet
+        // Email confirmation required — profile gets provisioned on first
+        // login after the user clicks the confirmation link.
         setCheckEmail(true)
         setLoading(false)
         return
       }
 
-      // 2. Assign discriminator
-      const { data: disc, error: rpcError } = await supabase.rpc(
-        'get_next_discriminator',
-        { base_name: trimmedName },
-      )
-      if (rpcError) throw rpcError
-
-      // 3. Insert profile
-      const { error: profileError } = await supabase.from('profiles').insert([
-        {
-          id: authData.user!.id,
-          display_name: trimmedName,
-          discriminator: disc as number,
-          normal_commute_mode_id: normalModeId || null,
-        },
-      ])
-      if (profileError) throw profileError
-
-      await refreshProfile(authData.user!.id)
+      await refreshProfile(authData.user!)
       navigate('/leaderboard')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
